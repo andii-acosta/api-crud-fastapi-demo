@@ -1,12 +1,30 @@
-from fastapi import FastAPI,Body,Path,Query
+from fastapi import FastAPI,Body,Path,Query,Request,HTTPException,Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel,Field
 from typing import Optional,List
+
+from starlette.requests import Request
+from jwt_manager import create_token,valid_token
+from fastapi.security import HTTPBearer
 
 app = FastAPI()
 app.title = "Api demo FastAPI"
 app.version = "0.0.1"
 
+
+class JWTBearer(HTTPBearer):
+    async def __call__(self, request: Request) :
+        auth = await super().__call__(request)
+        data = valid_token(auth.credentials)
+        if data["email"] != "admin@admin.com":
+            raise HTTPException(status_code=403,detail="Credentials invalid")
+
+
+class User(BaseModel):
+    email: str
+    password: str
+    
+    
 class Movie(BaseModel):
     id : Optional[int] | None=None
     age : str = Field(max_length=4)
@@ -52,12 +70,19 @@ movies = [
 ]
 
 
+@app.post('/login',tags=['auth'])
+def login(user: User):
+    if user.email == "admin@admin.com" and user.password == "123456":
+        token : str = create_token(user.dict())
+        return JSONResponse(status_code=200,content=token)
+    
+
 @app.get("/",tags=['home'],response_model=dict, status_code=200)
 def main() -> dict:
     return JSONResponse(status_code=200, content={"message": "Welcome, this is an API created for Learn FastAPI crud"})
 
 
-@app.get('/movies',tags=['movies'],response_model=List[Movie], status_code=200)
+@app.get('/movies',tags=['movies'],response_model=List[Movie], status_code=200, dependencies=[Depends(JWTBearer())])
 def get_movies() -> List[Movie]:
     return JSONResponse(status_code=200,content=movies)
 
